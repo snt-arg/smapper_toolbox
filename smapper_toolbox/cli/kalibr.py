@@ -2,7 +2,7 @@ import typer
 
 from smapper_toolbox.config import Config
 from smapper_toolbox.logger import logger
-from smapper_toolbox.calibration import Calibrators
+from smapper_toolbox.calibration.kalibr import Calibrators
 from smapper_toolbox.rosbags import RosbagsConverter
 
 app = typer.Typer()
