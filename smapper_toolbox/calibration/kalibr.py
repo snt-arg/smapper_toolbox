@@ -9,11 +9,12 @@ from smapper_toolbox.config import Config
 from smapper_toolbox.utils import DockerError, DockerRunner
 from smapper_toolbox.utils import execute_pool
 from smapper_toolbox.logger import logger
-
-# NOTE: Command for imu-camera calibration
-# rosrun kalibr kalibr_calibrate_imu_camera --bag /bags/calib02_side_left.bag \
-# --cams /data/static/calib02_side_left-camchain.yaml --imu /data/static/imu/imu.yaml \
-# --target /data/april_6x6_80x80cm.yaml --imu-models calibrated --reprojection-sigma 1.0
+from smapper_toolbox.rosbags.analyzer import (
+    CalibrationMode,
+    RosbagAnalyzer,
+    TopicInfo,
+    TopicSelector,
+)
 
 
 class CalibrationBase(ABC):
@@ -39,11 +40,13 @@ class CalibrationBase(ABC):
         docker_helper: DockerRunner,
         data_path: str,
         bags_path: str,
+        bag_analyzer: RosbagAnalyzer,
     ):
         self.config = config
         self.docker_helper = docker_helper
         self.docker_data_path = data_path
         self.docker_bags_path = bags_path
+        self.bag_analyzer = bag_analyzer
 
     @abstractmethod
     def run(self):
@@ -76,26 +79,35 @@ class CameraCalibration(CalibrationBase):
         Returns:
             list: Docker command to run the calibration.
         """
+
+        exec = (
+            "kalibr_calibrate_rs_cameras"
+            if rolling_shutter
+            else "kalibr_calibrate_cameras"
+        )
+
+        target = os.path.join(
+            self.docker_data_path,
+            self.config.calibrators.camera_calibrator.target_filename,
+        )
+
+        camera_model = self.config.calibrators.camera_calibrator.camera_model
+
+        # fmt: off
         cmd = [
-            "rosrun",
-            "kalibr",
-            (
-                "kalibr_calibrate_rs_cameras"
-                if rolling_shutter
-                else "kalibr_calibrate_cameras"
-            ),
-            "--bag",
-            f"/bags/{bag_name}",
-            "--bag-freq",
-            "10",
-            "--target",
-            os.path.join(self.docker_data_path, self.config.april_tag_filename),
-            "--models",
-            "pinhole-radtan",
+            "rosrun", "kalibr", exec,
+            "--bag", f"/bags/{bag_name}", "--bag-freq", "10",
+            "--target", target,
             "--dont-show-report",
-            "--topics",
         ]
+
+        # fmt: on
+
+        cmd.append("--topics")
         cmd.extend(topics)
+
+        cmd.append("--models")
+        cmd.extend([camera_model for _ in range(len(topics))])
 
         return self.docker_helper.get_run_container_cmd(
             "kalibr",
@@ -115,49 +127,47 @@ class CameraCalibration(CalibrationBase):
         calibration files for each camera. The results are stored
         in the static directory within calibration_dir.
         """
-        logger.info(
-            "Running camera calibrations. Only rosbags with prefix calib are considered!"
-        )
+        logger.info("Running camera calibrations.")
+        topic_selector = TopicSelector()
         cmds = []
 
-        for output in os.listdir(os.path.join(self.config.rosbags_dir, "ros1")):
-            if "calib" not in output:
-                continue
+        bags = self.bag_analyzer.find_calibration_bags(
+            self.config.rosbags_dir, CalibrationMode.CAMERA_ONLY
+        )
 
-            bag_split = output.split("_")
-            if len(bag_split) < 2:
-                logger.warning(
-                    f"A bag was found with an invalid name [{output}]. Name must be of the form calibxx_[camera_name].bag"
+        logger.info(f"The following bags will be used")
+        for bag in bags:
+            print(bag)
+            cmds.append(
+                self.run_single_calibration(
+                    bag.name, topic_selector.select_camera_topics(bag)
                 )
-                logger.warning("Discarding it")
-                continue
-
-            topics = ["_".join(bag_split[1:]).split(".")[0]]
-            topics[0] = "/camera/" + topics[0] + "/image_raw"
-
-            cmds.append(self.run_single_calibration(output, topics))
+            )
 
         execute_pool(
             cmds,
             "Running calibrations in Kalibr...",
-            self.config.parallel_jobs,
+            self.config.calibrators.camera_calibrator.parallel_calibrations,
         )
 
-        logger.info(
-            f"Moving generated files into {os.path.join(self.config.calibration_dir, 'static')}"
+        save_dir = os.path.join(
+            self.config.calibration_dir,
+            self.config.calibrators.camera_calibrator.save_dir,
         )
-        for output in os.listdir(os.path.join(self.config.rosbags_dir, "ros1")):
-            file_extension = output.split(".")[-1]
-            if "calib" not in output:
-                continue
+
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir)
+
+        logger.info(f"Moving generated files into {save_dir}")
+        for file in os.listdir(os.path.join(self.config.rosbags_dir, "ros1")):
+            file_extension = file.split(".")[-1]
 
             if file_extension not in ["yaml", "pdf", "txt"]:
+                print(file)
                 continue
 
-            file = os.path.join(self.config.rosbags_dir, "ros1", output)
-            shutil.move(
-                file, os.path.join(self.config.calibration_dir, "static", output)
-            )
+            file = os.path.join(self.config.rosbags_dir, "ros1", file)
+            shutil.move(file, save_dir)
 
 
 class IMUCalibration(CalibrationBase):
@@ -257,13 +267,15 @@ class IMUCalibration(CalibrationBase):
         ros1_bags_dir = os.path.join(self.config.rosbags_dir, "ros1")
         os.makedirs(os.path.join(ros1_bags_dir, "temp"), exist_ok=True)
 
-        for file in os.listdir(ros1_bags_dir):
-            if "imu" not in file or os.path.isdir(os.path.join(ros1_bags_dir, file)):
-                continue
+        bags = self.bag_analyzer.find_calibration_bags(
+            self.config.rosbags_dir, CalibrationMode.IMU_ONLY
+        )
 
+        logger.info(f"The following bags will be used")
+        for bag in bags:
             shutil.move(
-                os.path.join(ros1_bags_dir, file),
-                os.path.join(ros1_bags_dir, "temp", file),
+                os.path.join(ros1_bags_dir, bag.name),
+                os.path.join(ros1_bags_dir, "temp"),
             )
 
             if self.run_single_calibration():
@@ -279,8 +291,8 @@ class IMUCalibration(CalibrationBase):
                 )
 
             shutil.move(
-                os.path.join(ros1_bags_dir, "temp", file),
-                os.path.join(ros1_bags_dir, file),
+                os.path.join(ros1_bags_dir, "temp", bag.name),
+                os.path.join(ros1_bags_dir),
             )
 
         # Cleanup
@@ -318,14 +330,21 @@ class IMUCameraCalibration(CalibrationBase):
             "kalibr_calibrate_imu_camera",
             "--bag",
             f"/bags/{bag_name}",
-            "--cam",
+            "--cams",
             os.path.join(self.docker_data_path, camera_yaml),
             "--imu",
             os.path.join(self.docker_data_path, imu_yaml),
-            "--target",
+            "--imu-models",
+            "calibrated" "--target",
             os.path.join(self.docker_data_path, self.config.april_tag_filename),
             "--dont-show-report",
+            "--reprojection-sigma",
+            "1.0",
         ]
+        # NOTE: Command for imu-camera calibration
+        # rosrun kalibr kalibr_calibrate_imu_camera --bag /bags/calib02_side_left.bag \
+        # --cams /data/static/calib02_side_left-camchain.yaml --imu /data/static/imu/imu.yaml \
+        # --target /data/april_6x6_80x80cm.yaml --imu-models calibrated --reprojection-sigma 1.0
 
         return self.docker_helper.get_run_container_cmd(
             "kalibr",
@@ -384,11 +403,7 @@ class IMUCameraCalibration(CalibrationBase):
             )
             return
 
-        execute_pool(
-            cmds,
-            "Running camera-IMU calibrations in Kalibr...",
-            self.config.parallel_jobs,
-        )
+        execute_pool(cmds, "Running camera-IMU calibrations in Kalibr...", 1)
 
         logger.info(
             f"Moving generated files into {os.path.join(self.config.calibration_dir, 'static')}"
@@ -413,24 +428,28 @@ class Calibrators:
         self.docker_runner = DockerRunner()
         self.docker_data_path = "/data"
         self.docker_bags_path = "/bags"
+        self.bag_analyzer = RosbagAnalyzer()
 
         self.camera_calibrator = CameraCalibration(
             self.config,
             self.docker_runner,
             self.docker_data_path,
             self.docker_bags_path,
+            self.bag_analyzer,
         )
         self.imu_calibrator = IMUCalibration(
             self.config,
             self.docker_runner,
             self.docker_data_path,
             self.docker_bags_path,
+            self.bag_analyzer,
         )
         self.imu_camera_calibrator = IMUCameraCalibration(
             self.config,
             self.docker_runner,
             self.docker_data_path,
             self.docker_bags_path,
+            self.bag_analyzer,
         )
 
     def setup(self) -> bool:
