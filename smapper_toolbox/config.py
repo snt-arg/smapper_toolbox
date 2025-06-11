@@ -9,13 +9,38 @@ from pydantic_settings import (
 )
 
 
+class CameraCalibratorConfig(BaseSettings):
+    parallel_calibrations: int = 1
+    camera_model: str = "pinhole-radtan"
+    save_dir: str
+    target_filename: str
+
+
+class IMUCalibratorConfig(BaseSettings):
+    save_dir: str
+
+
+class CameraIMUCalibratorConfig(BaseSettings):
+    save_dir: str
+
+
+class CalibratorsConfig(BaseSettings):
+    camera_calibrator: CameraCalibratorConfig
+    imu_calibrator: IMUCalibratorConfig
+    camera_imu_calibrator: CameraIMUCalibratorConfig
+
+
+class RosbagsConfig(BaseSettings):
+    parallel_conversions: int
+
+
 class Config(BaseSettings):
     """Configuration settings for the calibration toolbox.
-    
+
     This class handles all configuration settings for the calibration process,
-    including paths, parameters, and Docker settings. It uses Pydantic for 
+    including paths, parameters, and Docker settings. It uses Pydantic for
     validation and YAML file loading.
-    
+
     Attributes:
         calibration_dir (str): Directory containing calibration files and results.
         rosbags_dir (str): Directory containing ROS bags for calibration.
@@ -30,19 +55,18 @@ class Config(BaseSettings):
         bag_frequency (int): Frequency at which to process the ROS bags.
         config_file (str): Path to the YAML configuration file.
     """
+
     calibration_dir: str = ""
     rosbags_dir: str = ""
     april_tag_filename: str = ""
-    parallel_jobs: int = 1
     kalibr_image_tag: str = "kalibr"
     imu_config_filename: str = "static/imu/config.yaml"
     smapper_dir: str = ""
-    camera_model: str = "pinhole-radtan"
-    camera_topic_prefix: str = "/camera/"
-    camera_topic_suffix: str = "/image_raw"
-    bag_frequency: int = 10
-    config_file: str = "config/config.yaml"
+    april_tag_filename: str = ""  # Relative to calibration_dir
+    calibrators: CalibratorsConfig
+    rosbags: RosbagsConfig
 
+    config_file: str = "config/config.yaml"
     model_config = SettingsConfigDict(
         yaml_file=config_file,
     )
@@ -57,17 +81,17 @@ class Config(BaseSettings):
         file_secret_settings: PydanticBaseSettingsSource,
     ) -> Tuple[PydanticBaseSettingsSource, ...]:
         """Customizes the configuration sources for Pydantic settings.
-        
+
         This method is called by Pydantic to determine how to load settings.
         It configures the settings to be loaded from a YAML file.
-        
+
         Args:
             settings_cls: The settings class type.
             init_settings: Settings from initialization.
             env_settings: Settings from environment variables.
             dotenv_settings: Settings from .env file.
             file_secret_settings: Settings from secrets file.
-            
+
         Returns:
             tuple: A tuple containing the YAML config source.
         """
@@ -76,20 +100,19 @@ class Config(BaseSettings):
     @field_validator(
         "calibration_dir",
         "rosbags_dir",
-        "april_tag_filename",
         "smapper_dir",
         mode="before",
     )
     @classmethod
     def expand_path(cls, v: str) -> str:
         """Expands environment variables and user paths in path strings.
-        
+
         This validator is applied to path fields to expand variables like $HOME
         and ~/ into their full paths.
-        
+
         Args:
             v: The path string to expand.
-            
+
         Returns:
             str: The expanded path.
         """
