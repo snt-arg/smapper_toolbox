@@ -1,7 +1,33 @@
-calibration_dir: ~/work/smapper/calibration/kalibr/ # Where calibration data metadata is. Will also be used to store generated calibrations
-rosbags_dir: ~/rosbags # Where rosbags bags are. This directory must have a ros2 directory where ros2 bags are stored
-smapper_dir: ~/work/smapper/ # Mainly used to get the custom Dockerfile for Kalibr
-april_tag_filename: april_6x6_80x80cm.yaml # Relative to calibration_dir
+# calibration_dir: Path to where any calibration metadata is located.
+# It is also used to stored generated calibrations
+calibration_dir: ~/work/smapper/calibration/kalibr/
+
+# rosbags_dir: A directory where it contains a ros2 folder with ros2 bags.
+# These bags will be converted into ros1 bags and will be saved into a ros1 directory.
+# If a ros1 bag has already been converted from a ros2 bag, it is skipped.
+rosbags_dir: ~/rosbags
+
+# smapper_dir: Path to where the smapper repo is located.
+# Is mainly used to retrieve the custom Dockerfile for kalibr
+smapper_dir: ~/work/smapper/
+
 imu_config_filename: static/imu/config.yaml
 kalibr_image_tag: kalibr
-parallel_jobs: 4
+april_tag_filename: april_6x6_80x80cm.yaml # Relative to calibration_dir
+
+rosbags:
+    parallel_conversions: 4
+
+calibrators:
+    camera_calibrator:
+        parallel_calibrations: 4
+        save_dir: "static/camera" # Relative to calibration_dir
+        target_filename: april_6x6_80x80cm.yaml # Relative to calibration_dir
+        camera_model: pinhole-radtan # All the cameras in the rosbag must have the same model
+
+    imu_calibrator:
+        save_dir: "static/imu" # Relative to calibration_dir
+
+    camera_imu_calibrator:
+        save_dir: "dynamic/" # Relative to calibration_dir
+
