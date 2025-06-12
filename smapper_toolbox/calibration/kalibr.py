@@ -1,4 +1,6 @@
 from abc import ABC, abstractmethod
+from time import sleep
+import yaml
 from typing import List
 import os
 import shutil
@@ -12,6 +14,7 @@ from smapper_toolbox.logger import logger
 from smapper_toolbox.rosbags.analyzer import (
     CalibrationMode,
     RosbagAnalyzer,
+    RosbagInfo,
     TopicInfo,
     TopicSelector,
 )
@@ -66,7 +69,7 @@ class CameraCalibration(CalibrationBase):
     and generates calibration files.
     """
 
-    def run_single_calibration(
+    def get_calibation_command(
         self, bag_name: str, topics: List[str], rolling_shutter: bool = False
     ):
         """Runs calibration for a single camera.
@@ -139,7 +142,7 @@ class CameraCalibration(CalibrationBase):
         for bag in bags:
             print(bag)
             cmds.append(
-                self.run_single_calibration(
+                self.get_calibation_command(
                     bag.name, topic_selector.select_camera_topics(bag)
                 )
             )
@@ -178,20 +181,12 @@ class IMUCalibration(CalibrationBase):
     calibration parameters.
     """
 
-    def _cleanup_container(self):
+    def _cleanup_temp_container(self):
         """Cleans up the temporary Docker container used for IMU calibration."""
         logger.info("Cleaning up temporary container")
         self.docker_helper.cleanup_container(container_name="kalibr")
 
-    def run_single_calibration(self):
-        """Runs calibration for a single IMU.
-
-        This method performs Allan Variance analysis on IMU data
-        and generates calibration parameters.
-
-        Returns:
-            bool: True if calibration was successful, False otherwise.
-        """
+    def _create_temp_container(self):
         logger.info("Creating temporary persistant container for roscore")
         self.docker_helper.create_persistent_container(
             "kalibr",
@@ -205,13 +200,26 @@ class IMUCalibration(CalibrationBase):
             ],
         )
 
-        cmd1 = [
+    def _compute_allan_variance(self):
+        imu_config_file = os.path.join(
+            self.docker_data_path,
+            self.config.calibrators.imu_calibrator.save_dir,
+            self.config.calibrators.imu_calibrator.imu_config_filename,
+        )
+
+        cmd = [
             "docker",
             "exec",
             "kalibr",
             "bash",
             "-c",
-            f"source /opt/ros/noetic/setup.bash && source /catkin_ws/devel/setup.bash && rosrun allan_variance_ros allan_variance /bags/temp /data/{self.config.imu_config_filename}",
+            " && ".join(
+                [
+                    "source /opt/ros/noetic/setup.bash",
+                    "source /catkin_ws/devel/setup.bash",
+                    f"rosrun allan_variance_ros allan_variance /bags/temp {imu_config_file}",
+                ],
+            ),
         ]
         with Progress(
             SpinnerColumn(),
@@ -221,21 +229,44 @@ class IMUCalibration(CalibrationBase):
             progress.add_task(description="Running Allan Variance...", total=None)
             stdout = subprocess.DEVNULL
             stderr = subprocess.PIPE
-            ret = subprocess.call(cmd1, stdout=stdout, stderr=stderr, text=True)
+            ret = subprocess.call(cmd, text=True)
             if ret != 0:
                 logger.error("Something went wrong while running Allan Variance")
                 print(stdout)
                 print(stderr)
-                self._cleanup_container()
+                self._cleanup_temp_container()
                 return False
+        return True
 
-        cmd2 = [
+    def _analyze_alan_variance(self):
+        imu_config_file = os.path.join(
+            self.docker_data_path,
+            self.config.calibrators.imu_calibrator.save_dir,
+            self.config.calibrators.imu_calibrator.imu_config_filename,
+        )
+
+        imu_out_file = os.path.join(
+            self.docker_data_path,
+            self.config.calibrators.imu_calibrator.save_dir,
+            "imu.yaml",
+        )
+
+        cmd = [
             "docker",
             "exec",
             "kalibr",
             "bash",
             "-c",
-            f"source /opt/ros/noetic/setup.bash && source /catkin_ws/devel/setup.bash &&  rosrun allan_variance_ros analysis.py --data /bags/temp/allan_variance.csv --output /data/static/imu/imu.yaml --config /data/{self.config.imu_config_filename}",
+            " && ".join(
+                [
+                    "source /opt/ros/noetic/setup.bash",
+                    "source /catkin_ws/devel/setup.bash",
+                    f"""rosrun allan_variance_ros analysis.py \
+                    --data /bags/temp/allan_variance.csv \
+                    --output {imu_out_file} \
+                    --config {imu_config_file}""",
+                ]
+            ),
         ]
 
         with Progress(
@@ -246,15 +277,57 @@ class IMUCalibration(CalibrationBase):
             progress.add_task(description="Analyzing Allan Variance...", total=None)
             stdout = subprocess.PIPE
             stderr = subprocess.PIPE
-            ret = subprocess.call(cmd2, stdout=stdout, stderr=stderr, text=True)
+            ret = subprocess.call(cmd, stdout=stdout, stderr=stderr, text=True)
             if ret != 0:
                 logger.error("Something went wrong while analyzing Allan Variance")
                 print(stdout)
                 print(stderr)
-                self._cleanup_container()
+                self._cleanup_temp_container()
                 return False
+        return True
 
-        self._cleanup_container()
+    def run_single_calibration(self, rosbag: RosbagInfo):
+        """Runs calibration for a single IMU.
+
+        This method performs Allan Variance analysis on IMU data
+        and generates calibration parameters.
+
+        Returns:
+            bool: True if calibration was successful, False otherwise.
+        """
+        self._create_temp_container()
+
+        if len(rosbag.imu_topics) > 1:
+            logger.warning(
+                "Current rosbag contains more than 1 IMU topic. Choosing first one available"
+            )
+
+        topic = rosbag.imu_topics[0]
+
+        imu_config = {
+            "imu_topic": topic.name,
+            "imu_rate": int(topic.frequency),
+            "measure_rate": int(topic.frequency),
+            "sequence_time": int(rosbag.duration * 1e-9),
+        }
+
+        save_dir = os.path.join(
+            self.config.calibration_dir, self.config.calibrators.imu_calibrator.save_dir
+        )
+        imu_config_file = os.path.join(save_dir, "imu_config.yaml")
+
+        with open(imu_config_file, "w") as file:
+            yaml.safe_dump(imu_config, file)
+
+        if not self._compute_allan_variance():
+            return False
+
+        if not self._analyze_alan_variance():
+            return False
+
+        sleep(60)
+
+        self._cleanup_temp_container()
         return True
 
     def run(self):
@@ -266,6 +339,13 @@ class IMUCalibration(CalibrationBase):
         """
         ros1_bags_dir = os.path.join(self.config.rosbags_dir, "ros1")
         os.makedirs(os.path.join(ros1_bags_dir, "temp"), exist_ok=True)
+        os.makedirs(
+            os.path.join(
+                self.config.calibration_dir,
+                self.config.calibrators.imu_calibrator.save_dir,
+            ),
+            exist_ok=True,
+        )
 
         bags = self.bag_analyzer.find_calibration_bags(
             self.config.rosbags_dir, CalibrationMode.IMU_ONLY
@@ -278,7 +358,7 @@ class IMUCalibration(CalibrationBase):
                 os.path.join(ros1_bags_dir, "temp"),
             )
 
-            if self.run_single_calibration():
+            if self.run_single_calibration(bag):
                 ros1_bags_dir = os.path.join(self.config.rosbags_dir, "ros1")
                 shutil.move(
                     f"{ros1_bags_dir}/temp/allan_variance.csv",

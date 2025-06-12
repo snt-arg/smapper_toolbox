@@ -18,10 +18,12 @@ class CameraCalibratorConfig(BaseSettings):
 
 class IMUCalibratorConfig(BaseSettings):
     save_dir: str
+    imu_config_filename: str
 
 
 class CameraIMUCalibratorConfig(BaseSettings):
     save_dir: str
+    reprojection_sigma: float
 
 
 class CalibratorsConfig(BaseSettings):
