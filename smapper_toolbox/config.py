@@ -1,5 +1,6 @@
-from typing import Tuple, Type, Optional, ClassVar
 import os
+from typing import Tuple, Type
+
 from pydantic import field_validator
 from pydantic_settings import (
     BaseSettings,
@@ -22,6 +23,7 @@ class IMUCalibratorConfig(BaseSettings):
 
 
 class CameraIMUCalibratorConfig(BaseSettings):
+    parallel_calibrations: int = 1
     save_dir: str
     reprojection_sigma: float
 

@@ -1,6 +1,6 @@
 # calibration_dir: Path to where any calibration metadata is located.
 # It is also used to stored generated calibrations
-calibration_dir: ~/Work/smapper/calibration/kalibr/
+calibration_dir: ~/work/smapper/calibration/kalibr/
 
 # rosbags_dir: A directory where it contains a ros2 folder with ros2 bags.
 # These bags will be converted into ros1 bags and will be saved into a ros1 directory.
@@ -9,7 +9,7 @@ rosbags_dir: ~/rosbags
 
 # smapper_dir: Path to where the smapper repo is located.
 # Is mainly used to retrieve the custom Dockerfile for kalibr
-smapper_dir: ~/Work/smapper/
+smapper_dir: ~/work/smapper/
 
 imu_config_filename: static/imu/config.yaml
 kalibr_image_tag: kalibr
@@ -30,5 +30,6 @@ calibrators:
         imu_config_filename: "imu_config.yaml"
 
     camera_imu_calibrator:
+        parallel_calibrations: 4
         save_dir: "dynamic/" # Relative to calibration_dir
         reprojection_sigma: 1.0

@@ -1,6 +1,7 @@
 import typer
-from smapper_toolbox.logger import logger
+
 from smapper_toolbox.cli import kalibr_app
+from smapper_toolbox.logger import logger
 
 
 def main():
