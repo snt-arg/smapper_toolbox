@@ -1,3 +1,9 @@
+"""
+Job and process execution utilities for the SMapper toolbox.
+
+This module provides classes and functions to manage, execute, and monitor jobs in parallel, including support for Docker-based jobs.
+"""
+
 import signal
 import subprocess
 import time

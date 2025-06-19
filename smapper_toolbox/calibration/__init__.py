@@ -1,3 +1,4 @@
+import os
 from abc import ABC, abstractmethod
 
 from smapper_toolbox.config import Config
@@ -6,6 +7,8 @@ from smapper_toolbox.rosbags.analyzer import (
     TopicSelector,
 )
 from smapper_toolbox.utils import DockerRunner
+
+IMU_NOISE_FILENAME = "imu_noise.yaml"
 
 
 class CalibrationBase(ABC):
@@ -39,13 +42,16 @@ class CalibrationBase(ABC):
     ):
         self.config = config
         self.docker_helper = docker_helper
-        self.docker_data_path = data_path
-        self.docker_bags_path = bags_path
+        self.docker_calibration_dir = data_path
+        self.docker_rosbags_dir = bags_path
         self.bag_analyzer = bag_analyzer
         self.topics_selector = TopicSelector()
 
+        # We only care about ros1 bags for the calibrators
+        self.rosbags_dir = os.path.join(self.config.rosbags_dir, "ros1")
+
     @abstractmethod
-    def run(self) -> None:
+    def run(self, **kwargs) -> None:
         """Execute the calibration procedure.
 
         This method must be implemented by concrete calibration classes

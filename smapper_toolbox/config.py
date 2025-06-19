@@ -1,3 +1,9 @@
+"""
+Configuration management for the SMapper toolbox.
+
+This module defines configuration classes and utilities using Pydantic and YAML for managing calibration and toolbox settings.
+"""
+
 import os
 from typing import Tuple, Type
 
@@ -19,7 +25,6 @@ class CameraCalibratorConfig(BaseSettings):
 
 class IMUCalibratorConfig(BaseSettings):
     save_dir: str
-    imu_config_filename: str
 
 
 class CameraIMUCalibratorConfig(BaseSettings):

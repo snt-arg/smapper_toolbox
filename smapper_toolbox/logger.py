@@ -1,3 +1,8 @@
+"""
+Logger setup for the SMapper toolbox.
+
+This module configures the logger with colored output and a custom format for use throughout the toolbox.
+"""
 import logging
 import coloredlogs
 

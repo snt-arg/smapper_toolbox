@@ -1,8 +1,7 @@
-"""Kalibr calibration module.
+"""
+Kalibr calibration manager for the SMapper toolbox.
 
-This module provides classes for camera, IMU, and camera-IMU calibration using the Kalibr toolbox.
-It handles the execution of calibration procedures in Docker containers and manages the calibration
-process for different sensor configurations.
+This module provides the Calibrators class, which manages camera, IMU, and camera-IMU calibration workflows using the Kalibr toolbox in Docker containers.
 """
 
 import os
@@ -86,9 +85,9 @@ class Calibrators:
             return False
         return True
 
-    def calibrate_cameras(self) -> None:
+    def calibrate_cameras(self, rs: bool = False) -> None:
         """Run camera calibration."""
-        self.camera_calibrator.run()
+        self.camera_calibrator.run(rs=rs)
 
     def calibrate_imu(self) -> None:
         """Run IMU calibration."""

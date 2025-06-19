@@ -1,7 +1,13 @@
+"""
+Camera calibration routines for the SMapper toolbox.
+
+This module provides the CameraCalibration class and related utilities to perform camera calibration using the Kalibr toolbox in a Docker environment.
+"""
+
 import os
-import shutil
 from typing import List
 
+from smapper_toolbox.calibration.helpers import move_kalibr_results
 from smapper_toolbox.logger import logger
 from smapper_toolbox.rosbags.analyzer import (
     CalibrationMode,
@@ -25,14 +31,13 @@ class CameraCalibration(CalibrationBase):
     """
 
     def generate_docker_job_config(
-        self, bag_name: str, topics: List[str], rolling_shutter: bool = False
+        self, bag_name: str, topics: List[str]
     ) -> DockerJobConfig:
         """Generate Docker job configuration for camera calibration.
 
         Args:
             bag_name: Name of the ROS bag file containing camera data.
             topics: List of ROS topics containing camera images.
-            rolling_shutter: Whether to use rolling shutter calibration.
 
         Returns:
             dict: Docker job configuration containing:
@@ -41,22 +46,17 @@ class CameraCalibration(CalibrationBase):
                 - env_var: Environment variables
                 - volumes: Volume mounts
         """
-        executable = (
-            "kalibr_calibrate_rs_cameras"
-            if rolling_shutter
-            else "kalibr_calibrate_cameras"
-        )
-
         target = os.path.join(
-            self.docker_data_path,
+            self.docker_calibration_dir,
             self.config.calibrators.camera_calibrator.target_filename,
         )
 
+        # If rolling shutter, add -rs to the end of camera model
         camera_model = self.config.calibrators.camera_calibrator.camera_model
 
         # fmt: off
         cmd = [
-            "rosrun", "kalibr", executable,
+            "rosrun", "kalibr", "kalibr_calibrate_cameras",
             "--bag", f"/bags/{bag_name}", "--bag-freq", "10",
             "--target", target,
             "--dont-show-report",
@@ -75,31 +75,14 @@ class CameraCalibration(CalibrationBase):
             env_var={"DISPLAY": "$DISPLAY"},
             volumes=[
                 "/tmp/.X11-unix:/tmp/.X11-unix:rw",
-                f"{self.config.calibration_dir}:{self.docker_data_path}",
-                f"{os.path.join(self.config.rosbags_dir, 'ros1')}:{self.docker_bags_path}",
+                f"{self.config.calibration_dir}:{self.docker_calibration_dir}",
+                f"{self.rosbags_dir}:{self.docker_rosbags_dir}",
             ],
         )
 
         return job_config
 
-    def _move_calibration_files(self, save_dir: str) -> None:
-        """Move generated calibration files to the save directory.
-
-        Args:
-            save_dir: Directory to save the calibration files.
-        """
-        logger.info(f"Moving generated files into {save_dir}")
-        for file in os.listdir(os.path.join(self.config.rosbags_dir, "ros1")):
-            file_extension = file.split(".")[-1]
-
-            if file_extension not in ["yaml", "pdf", "txt"]:
-                logger.debug(f"Skipping non-calibration file: {file}")
-                continue
-
-            file = os.path.join(self.config.rosbags_dir, "ros1", file)
-            shutil.move(file, save_dir)
-
-    def run(self) -> None:
+    def run(self, **kwargs) -> None:
         """Run the camera calibration process.
 
         This method:
@@ -107,6 +90,8 @@ class CameraCalibration(CalibrationBase):
         2. Runs Kalibr calibration for each bag in parallel
         3. Moves generated calibration files to the save directory
         """
+        del kwargs  # suppressing linter warning
+
         logger.info("Running camera calibrations.")
         jobs = []
 
@@ -116,10 +101,11 @@ class CameraCalibration(CalibrationBase):
 
         logger.info("The following bags will be used")
         for bag in bags:
-            logger.info(f"Processing bag: {bag}")
+            print(bag)
             jobs.append(
                 self.generate_docker_job_config(
-                    bag.name, self.topics_selector.select_camera_topics(bag)
+                    bag.name,
+                    self.topics_selector.select_camera_topics(bag),
                 )
             )
 
@@ -138,4 +124,5 @@ class CameraCalibration(CalibrationBase):
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
 
-        self._move_calibration_files(save_dir)
+        logger.info(f"Moving kalibr results into {save_dir}")
+        move_kalibr_results(bags, self.rosbags_dir, save_dir)

@@ -1,3 +1,9 @@
+"""
+ROS bag analysis utilities.
+
+This module provides classes and functions to analyze ROS bag files, extract topic information, and assist in selecting topics for calibration workflows.
+"""
+
 import os
 from enum import Enum
 from typing import List, Optional

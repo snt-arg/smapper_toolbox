@@ -1,3 +1,9 @@
+"""
+ROS bag conversion utilities.
+
+This module provides functionality to convert ROS2 bags to ROS1 format for use in calibration workflows.
+"""
+
 import os
 from typing import List
 

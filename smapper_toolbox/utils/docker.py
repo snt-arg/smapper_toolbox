@@ -1,3 +1,8 @@
+"""
+Docker management utilities for the SMapper toolbox.
+
+This module provides classes and functions to build images, run containers, and manage Docker resources for calibration workflows.
+"""
 import os
 from typing import Dict, List, Optional, Union
 from pathlib import Path
