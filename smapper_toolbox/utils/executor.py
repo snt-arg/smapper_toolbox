@@ -3,8 +3,9 @@ import subprocess
 import time
 from dataclasses import dataclass
 from enum import Enum
-from typing import List, Optional, Dict, Any
+from typing import Any, Dict, List, Optional
 
+from docker.errors import NotFound
 from rich.progress import (
     BarColumn,
     Progress,
@@ -16,7 +17,6 @@ from rich.progress import (
 
 from smapper_toolbox.logger import logger
 from smapper_toolbox.utils.docker import DockerRunner
-import docker
 
 
 class JobStatus(Enum):
@@ -36,24 +36,26 @@ class JobResult:
     status: JobStatus
 
 
+@dataclass
+class DockerJobConfig:
+    img_tag: str
+    command: List[str]
+    env_var: Optional[Dict[str, str]]
+    volumes: Optional[List[str]]
+
+
 class DockerJob:
     """Represents a single Docker job in the execution pool"""
 
     def __init__(
-        self,
-        docker_runner: DockerRunner,
-        img_tag: str,
-        command: List[str],
-        job_id: int,
-        env_var: Optional[Dict[str, str]] = None,
-        volumes: Optional[List[str]] = None,
+        self, docker_runner: DockerRunner, job_id: int, job_config: DockerJobConfig
     ):
         self.docker_runner = docker_runner
-        self.img_tag = img_tag
-        self.command = command
+        self.img_tag = job_config.img_tag
+        self.command = job_config.command
         self.id = job_id
-        self.env_var = env_var
-        self.volumes = volumes
+        self.env_var = job_config.env_var
+        self.volumes = job_config.volumes
         self.status = JobStatus.PENDING
         self.result: Optional[JobResult] = None
         self.container = None
@@ -62,7 +64,9 @@ class DockerJob:
     def start(self) -> None:
         """Start the Docker container"""
         try:
-            config = self.docker_runner._prepare_container_config(self.env_var, self.volumes)
+            config = self.docker_runner._prepare_container_config(
+                self.env_var, self.volumes
+            )
             self.container = self.docker_runner.client.containers.run(
                 self.img_tag,
                 self.command,
@@ -85,15 +89,19 @@ class DockerJob:
             # Try to get the container by ID
             self.container = self.docker_runner.client.containers.get(self.container_id)
             self.container.reload()
-            
+
             if self.container.status == "exited":
                 logs = self.container.logs().decode()
                 returncode = self.container.attrs["State"]["ExitCode"]
-                self.status = JobStatus.COMPLETED if returncode == 0 else JobStatus.FAILED
+                self.status = (
+                    JobStatus.COMPLETED if returncode == 0 else JobStatus.FAILED
+                )
                 self.result = JobResult(returncode, logs, None, self.status)
 
                 if self.status == JobStatus.FAILED:
-                    logger.error(f"Docker job {self.id} failed with return code {returncode}")
+                    logger.error(
+                        f"Docker job {self.id} failed with return code {returncode}"
+                    )
                     if logs:
                         logger.error(f"Container logs: {logs}")
 
@@ -101,12 +109,14 @@ class DockerJob:
                 try:
                     self.container.remove()
                 except Exception as e:
-                    logger.debug(f"Container {self.container_id} was already removed: {str(e)}")
-                
+                    logger.debug(
+                        f"Container {self.container_id} was already removed: {str(e)}"
+                    )
+
                 self.container = None
                 self.container_id = None
 
-        except docker.errors.NotFound:
+        except NotFound:
             # Container was removed (likely due to --rm flag)
             # We can consider this as completed since the container finished its execution
             self.status = JobStatus.COMPLETED
@@ -269,7 +279,7 @@ def execute_pool(
 
 def execute_docker_pool(
     docker_runner: DockerRunner,
-    jobs: List[Dict[str, Any]],
+    jobs: List[DockerJobConfig],
     description: str,
     max_parallel_jobs: int = 1,
 ) -> bool:
@@ -291,14 +301,5 @@ def execute_docker_pool(
     """
     pool = JobPool(max_parallel_jobs)
     for job_config in jobs:
-        pool.add_job(
-            DockerJob(
-                docker_runner,
-                job_config["img_tag"],
-                job_config["command"],
-                len(pool.jobs),
-                job_config.get("env_var"),
-                job_config.get("volumes"),
-            )
-        )
+        pool.add_job(DockerJob(docker_runner, len(pool.jobs), job_config))
     return pool.run_jobs(description)
