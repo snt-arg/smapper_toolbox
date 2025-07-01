@@ -3,7 +3,9 @@ Logger setup for the SMapper toolbox.
 
 This module configures the logger with colored output and a custom format for use throughout the toolbox.
 """
+
 import logging
+
 import coloredlogs
 
 LOG_LEVEL = "INFO"
@@ -34,7 +36,7 @@ logger = logging.getLogger("smapper_api")
 coloredlogs.install(
     level=LOG_LEVEL,
     logger=logger,
-    fmt="%(levelname)s [%(filename)s]: \t %(message)s",
+    fmt="%(levelname)s: \t %(message)s",
     level_styles=level_styles,
     field_styles=field_styles,
 )

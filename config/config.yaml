@@ -1,34 +1,55 @@
-# calibration_dir: Path to where any calibration metadata is located.
-# It is also used to stored generated calibrations
-calibration_dir: ~/Work/smapper/calibration/kalibr/
+# Global settings
+workspace:
+    base_dir: ~/Work/smapper
+    calibration_dir: ~/Work/smapper/calibration/kalibr
+    rosbags_dir: ~/rosbags
 
-# rosbags_dir: A directory where it contains a ros2 folder with ros2 bags.
-# These bags will be converted into ros1 bags and will be saved into a ros1 directory.
-# If a ros1 bag has already been converted from a ros2 bag, it is skipped.
-rosbags_dir: ~/rosbags
+# Docker configuration
+docker:
+    image_tag: kalibr
 
-# smapper_dir: Path to where the smapper repo is located.
-# Is mainly used to retrieve the custom Dockerfile for kalibr
-smapper_dir: ~/Work/smapper/
+# Target configurations (can have multiple)
+targets:
+    default:
+        type: apriltag
+        filename: april_6x6_80x80cm.yaml
 
-imu_config_filename: static/imu/config.yaml
-kalibr_image_tag: kalibr
-april_tag_filename: april_6x6_80x80cm.yaml # Relative to calibration_dir
+    checkerboard:
+        type: checkerboard
+        filename: checkerboard_9x6_0.05m.yaml
+        # path: custom_path
 
-rosbags:
+# Performance settings
+performance:
     parallel_conversions: 4
+    parallel_calibrations: 4
+    memory_per_job: 2g
 
-calibrators:
-    camera_calibrator:
-        parallel_calibrations: 4
-        save_dir: "static/camera" # Relative to calibration_dir
-        target_filename: april_6x6_80x80cm.yaml # Relative to calibration_dir
-        camera_model: pinhole-radtan # All the cameras in the rosbag must have the same model
+# Calibration modes
+calibration:
+    camera:
+        save_dir: static/camera
+        target: default # Reference to targets section
+        camera_model: pinhole-radtan
+        output_formats: [yaml, pdf, txt]
+        validation:
+            min_images: 50
+            max_reprojection_error: 2.0
 
-    imu_calibrator:
-        save_dir: "static/imu" # Relative to calibration_dir
+    imu:
+        enabled: true
+        save_dir: static/imu
+        random_walk_multiplier: 10
+        white_noise_multiplier: 5
+        validation:
+            min_duration_hours: 3
+            max_bias_drift: 0.01
 
-    camera_imu_calibrator:
-        parallel_calibrations: 4
-        save_dir: "dynamic/" # Relative to calibration_dir
+    camera_imu:
+        save_dir: dynamic
+        target: default
         reprojection_sigma: 1.0
+        output_formats: [yaml, pdf, txt]
+        validation:
+            min_images: 100
+            max_reprojection_error: 1.5

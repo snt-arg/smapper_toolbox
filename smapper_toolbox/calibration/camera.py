@@ -46,13 +46,19 @@ class CameraCalibration(CalibrationBase):
                 - env_var: Environment variables
                 - volumes: Volume mounts
         """
-        target = os.path.join(
-            self.docker_calibration_dir,
-            self.config.calibrators.camera_calibrator.target_filename,
+        target_path = (
+            self.config.get_target_path(self.config.calibration.camera.target)
+        ) or ""
+
+        rel_target_path = os.path.relpath(
+            target_path,
+            self.config.workspace.calibration_dir,
         )
 
+        target = os.path.join(self.docker_calibration_dir, rel_target_path)
+
         # If rolling shutter, add -rs to the end of camera model
-        camera_model = self.config.calibrators.camera_calibrator.camera_model
+        camera_model = self.config.calibration.camera.camera_model
 
         # fmt: off
         cmd = [
@@ -75,7 +81,7 @@ class CameraCalibration(CalibrationBase):
             env_var={"DISPLAY": "$DISPLAY"},
             volumes=[
                 "/tmp/.X11-unix:/tmp/.X11-unix:rw",
-                f"{self.config.calibration_dir}:{self.docker_calibration_dir}",
+                f"{self.config.workspace.calibration_dir}:{self.docker_calibration_dir}",
                 f"{self.rosbags_dir}:{self.docker_rosbags_dir}",
             ],
         )
@@ -96,7 +102,7 @@ class CameraCalibration(CalibrationBase):
         jobs = []
 
         bags = self.bag_analyzer.find_calibration_bags(
-            self.config.rosbags_dir, CalibrationMode.CAMERA_ONLY
+            self.config.workspace.rosbags_dir, CalibrationMode.CAMERA_ONLY
         )
 
         logger.info("The following bags will be used")
@@ -113,16 +119,21 @@ class CameraCalibration(CalibrationBase):
             self.docker_helper,
             jobs,
             "Running calibrations in Kalibr...",
-            self.config.calibrators.camera_calibrator.parallel_calibrations,
+            self.config.performance.parallel_calibrations,
         )
 
         save_dir = os.path.join(
-            self.config.calibration_dir,
-            self.config.calibrators.camera_calibrator.save_dir,
+            self.config.workspace.calibration_dir,
+            self.config.calibration.camera.save_dir,
         )
 
         if not os.path.exists(save_dir):
             os.makedirs(save_dir)
 
         logger.info(f"Moving kalibr results into {save_dir}")
-        move_kalibr_results(bags, self.rosbags_dir, save_dir)
+        move_kalibr_results(
+            bags,
+            self.rosbags_dir,
+            save_dir,
+            self.config.calibration.camera.output_formats,
+        )

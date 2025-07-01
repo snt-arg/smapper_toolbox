@@ -106,8 +106,8 @@ class Calibrators:
         Returns:
             bool: True if the image is ready, False otherwise.
         """
-        if self.docker_runner.image_exists(self.config.kalibr_image_tag):
-            logger.info(f"Kalibr Docker image <{self.config.kalibr_image_tag}> found.")
+        if self.docker_runner.image_exists(self.config.docker.image_tag):
+            logger.info(f"Kalibr Docker image <{self.config.docker.image_tag}> found.")
             return True
 
         logger.info("Kalibr Docker image does not yet exist. Building it")
@@ -120,12 +120,13 @@ class Calibrators:
                 description="Building docker image. (Patience)", total=None
             )
             try:
+                dockerfile_path = self.config.docker.dockerfile_path
+                if dockerfile_path is None:
+                    raise Exception("No dockerfile path provided")
                 self.docker_runner.build_image(
-                    tag=self.config.kalibr_image_tag,
-                    path=self.config.smapper_dir,
-                    dockerfile=os.path.join(
-                        self.config.smapper_dir, "docker", "kalibr", "Dockerfile"
-                    ),
+                    tag=self.config.docker.image_tag,
+                    path=self.config.workspace.base_dir,
+                    dockerfile=dockerfile_path,
                 )
             except DockerError:
                 logger.error("Failed to build Kalibr image")
@@ -144,15 +145,15 @@ class Calibrators:
         Returns:
             bool: True if all required files and directories exist, False otherwise.
         """
-        calib_dir = self.config.calibration_dir
-        smapper_dir = self.config.smapper_dir
+        calib_dir = self.config.workspace.calibration_dir
+        smapper_dir = self.config.workspace.base_dir
         logger.info(f"Validating file contents of {calib_dir}")
 
         # Check if april tag file exists
-        april_tag_path = os.path.join(calib_dir, self.config.april_tag_filename)
-        if not os.path.isfile(april_tag_path):
-            logger.error(f"April Tag config file {april_tag_path} does not exist")
-            return False
+        # april_tag_path = os.path.join(calib_dir, self.config.april_tag_filename)
+        # if not os.path.isfile(april_tag_path):
+        #     logger.error(f"April Tag config file {april_tag_path} does not exist")
+        #     return False
 
         # Check if SMapper repository exists
         if not os.path.isdir(smapper_dir):

@@ -51,12 +51,23 @@ class IMUCameraCalibration(CalibrationBase):
         """
         camchain_relative = os.path.join(
             self.docker_calibration_dir,
-            os.path.relpath(camchain_path, self.config.calibration_dir),
+            os.path.relpath(camchain_path, self.config.workspace.calibration_dir),
         )
         imu_config_relative = os.path.join(
             self.docker_calibration_dir,
-            os.path.relpath(imu_config_path, self.config.calibration_dir),
+            os.path.relpath(imu_config_path, self.config.workspace.calibration_dir),
         )
+
+        target_path = (
+            self.config.get_target_path(self.config.calibration.camera_imu.target)
+        ) or ""
+
+        rel_target_path = os.path.relpath(
+            target_path,
+            self.config.workspace.calibration_dir,
+        )
+
+        target = os.path.join(self.docker_calibration_dir, rel_target_path)
 
         # fmt: off
         cmd = [
@@ -65,7 +76,7 @@ class IMUCameraCalibration(CalibrationBase):
             "--cams", camchain_relative,
             "--imu", imu_config_relative,
             "--imu-models", "calibrated",
-            "--target", os.path.join(self.docker_calibration_dir, self.config.april_tag_filename),
+            "--target", target,
             "--reprojection-sigma", "1.0", 
             "--dont-show-report" 
         ]
@@ -77,7 +88,7 @@ class IMUCameraCalibration(CalibrationBase):
             env_var={"DISPLAY": "$DISPLAY"},
             volumes=[
                 "/tmp/.X11-unix:/tmp/.X11-unix:rw",
-                f"{self.config.calibration_dir}:{self.docker_calibration_dir}",
+                f"{self.config.workspace.calibration_dir}:{self.docker_calibration_dir}",
                 f"{self.rosbags_dir}:{self.docker_rosbags_dir}",
             ],
         )
@@ -122,19 +133,18 @@ class IMUCameraCalibration(CalibrationBase):
         jobs = []
 
         calib_files_path = os.path.join(
-            self.config.calibration_dir,
-            self.config.calibrators.camera_calibrator.save_dir,
+            self.config.workspace.calibration_dir,
+            self.config.calibration.camera.save_dir,
         )
 
-        # TODO: Replace imu.yaml by a constant instead
         imu_yaml = os.path.join(
-            self.config.calibration_dir,
-            self.config.calibrators.imu_calibrator.save_dir,
+            self.config.workspace.calibration_dir,
+            self.config.calibration.imu.save_dir,
             IMU_NOISE_FILENAME,
         )
 
         bags = self.bag_analyzer.find_calibration_bags(
-            self.config.rosbags_dir, CalibrationMode.CAMERA_IMU
+            self.config.workspace.rosbags_dir, CalibrationMode.CAMERA_IMU
         )
 
         for bag in bags:
@@ -146,6 +156,8 @@ class IMUCameraCalibration(CalibrationBase):
                 )
                 return
 
+            # BUG: We must go throug the imu.save_dir and get the yamls due to
+            # the change made to IMUCalibrator
             if not os.path.exists(imu_yaml):
                 logger.error(
                     "No IMU calibration file found. Please run IMU calibration first."
@@ -160,13 +172,18 @@ class IMUCameraCalibration(CalibrationBase):
             self.docker_helper,
             jobs,
             "Running camera-IMU calibrations in Kalibr...",
-            self.config.calibrators.camera_imu_calibrator.parallel_calibrations,
+            self.config.performance.parallel_calibrations,
         )
 
         save_dir = os.path.join(
-            self.config.calibration_dir,
-            self.config.calibrators.camera_imu_calibrator.save_dir,
+            self.config.workspace.calibration_dir,
+            self.config.calibration.camera_imu.save_dir,
         )
 
         logger.info(f"Moving kalibr results into {save_dir}")
-        move_kalibr_results(bags, self.rosbags_dir, save_dir)
+        move_kalibr_results(
+            bags,
+            self.rosbags_dir,
+            save_dir,
+            self.config.calibration.camera_imu.output_formats,
+        )

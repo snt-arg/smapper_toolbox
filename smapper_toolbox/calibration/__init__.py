@@ -48,7 +48,7 @@ class CalibrationBase(ABC):
         self.topics_selector = TopicSelector()
 
         # We only care about ros1 bags for the calibrators
-        self.rosbags_dir = os.path.join(self.config.rosbags_dir, "ros1")
+        self.rosbags_dir = os.path.join(self.config.workspace.rosbags_dir, "ros1")
 
     @abstractmethod
     def run(self, **kwargs) -> None:

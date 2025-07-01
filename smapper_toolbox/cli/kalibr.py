@@ -1,14 +1,19 @@
 import typer
 
 from smapper_toolbox.calibration.kalibr import Calibrators
-from smapper_toolbox.config import Config
+from smapper_toolbox.config import ConfigManager
 from smapper_toolbox.logger import logger
 from smapper_toolbox.rosbags import RosbagsConverter
 
 app = typer.Typer()
-config = Config()
-rosbags_converter = RosbagsConverter(config.rosbags_dir)
+config_manager = ConfigManager()
+config = config_manager.config
+rosbags_converter = RosbagsConverter(
+    config.workspace.rosbags_dir, parallel_jobs=config.performance.parallel_conversions
+)
 calibrators = Calibrators(config)
+
+print(config)
 
 
 def setup():

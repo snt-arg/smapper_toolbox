@@ -38,7 +38,7 @@ class IMUCalibration(CalibrationBase):
             env_var={"DISPLAY": "$DISPLAY"},
             volumes=[
                 "/tmp/.X11-unix:/tmp/.X11-unix:rw",
-                f"{self.config.calibration_dir}:{self.docker_calibration_dir}",
+                f"{self.config.workspace.calibration_dir}:{self.docker_calibration_dir}",
                 f"{self.rosbags_dir}:{self.docker_rosbags_dir}",
             ],
         )
@@ -92,7 +92,7 @@ class IMUCalibration(CalibrationBase):
         # Inside Docker
         imu_config_file = os.path.join(
             self.docker_calibration_dir,
-            self.config.calibrators.imu_calibrator.save_dir,
+            self.config.calibration.imu.save_dir,
             bag_name,
             IMU_CONFIG_FILE,
         )
@@ -122,7 +122,7 @@ class IMUCalibration(CalibrationBase):
         # Inside Docker
         save_dir = os.path.join(
             self.docker_calibration_dir,
-            self.config.calibrators.imu_calibrator.save_dir,
+            self.config.calibration.imu.save_dir,
             bag_name,
         )
         imu_config_file = os.path.join(
@@ -163,7 +163,7 @@ class IMUCalibration(CalibrationBase):
         # Inside Docker
         save_dir = os.path.join(
             self.docker_calibration_dir,
-            self.config.calibrators.imu_calibrator.save_dir,
+            self.config.calibration.imu.save_dir,
             bag_name,
         )
 
@@ -228,8 +228,8 @@ class IMUCalibration(CalibrationBase):
         bag_name = rosbag.name.split(".")[0]
 
         save_dir = os.path.join(
-            self.config.calibration_dir,
-            self.config.calibrators.imu_calibrator.save_dir,
+            self.config.workspace.calibration_dir,
+            self.config.calibration.imu.save_dir,
             bag_name,
         )
 
@@ -273,14 +273,14 @@ class IMUCalibration(CalibrationBase):
         del kwargs  # suppressing linter warning
 
         self.save_dir = os.path.join(
-            self.config.calibration_dir, self.config.calibrators.imu_calibrator.save_dir
+            self.config.workspace.calibration_dir, self.config.calibration.imu.save_dir
         )
 
         os.makedirs(self.save_dir, exist_ok=True)
         os.makedirs(os.path.join(self.rosbags_dir, "temp"), exist_ok=True)
 
         bags = self.bag_analyzer.find_calibration_bags(
-            self.config.rosbags_dir, CalibrationMode.IMU_ONLY
+            self.config.workspace.rosbags_dir, CalibrationMode.IMU_ONLY
         )
 
         self._create_temp_container()

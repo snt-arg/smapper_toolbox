@@ -11,7 +11,9 @@ from typing import List
 from smapper_toolbox.rosbags.analyzer import RosbagInfo
 
 
-def move_kalibr_results(bags: List[RosbagInfo], source: str, destination: str) -> None:
+def move_kalibr_results(
+    bags: List[RosbagInfo], source: str, destination: str, extensions: List[str]
+) -> None:
     if not os.path.exists(destination):
         os.makedirs(destination)
 
@@ -22,7 +24,7 @@ def move_kalibr_results(bags: List[RosbagInfo], source: str, destination: str) -
 
         for file in os.listdir(source):
             file_extension = file.split(".")[-1]
-            if filename in file and file_extension in ["yaml", "pdf", "txt"]:
+            if filename in file and file_extension in extensions:
                 src = os.path.join(source, file)
                 dest = os.path.join(results_dir, file)
                 shutil.move(src, dest)
