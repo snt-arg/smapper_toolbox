@@ -81,7 +81,7 @@ class IMUCalibration(CalibrationBase):
                 return False
         return True
 
-    def _compute_allan_variance(self) -> bool:
+    def _compute_allan_variance(self, bag_name: str) -> bool:
         """
         Compute Allan Variance for the IMU data inside the Docker container.
 
@@ -93,6 +93,7 @@ class IMUCalibration(CalibrationBase):
         imu_config_file = os.path.join(
             self.docker_calibration_dir,
             self.config.calibrators.imu_calibrator.save_dir,
+            bag_name,
             IMU_CONFIG_FILE,
         )
 
@@ -110,7 +111,7 @@ class IMUCalibration(CalibrationBase):
 
         return self._run_container_command(cmd, "Running Allan Variance...")
 
-    def _analyze_allan_variance(self) -> bool:
+    def _analyze_allan_variance(self, bag_name: str) -> bool:
         """
         Analyze the Allan Variance data and generate calibration parameters inside the Docker container.
 
@@ -122,6 +123,7 @@ class IMUCalibration(CalibrationBase):
         save_dir = os.path.join(
             self.docker_calibration_dir,
             self.config.calibrators.imu_calibrator.save_dir,
+            bag_name,
         )
         imu_config_file = os.path.join(
             save_dir,
@@ -150,7 +152,7 @@ class IMUCalibration(CalibrationBase):
 
         return self._run_container_command(cmd, "Analyzing Allan Variance...")
 
-    def _move_generated_plots(self) -> bool:
+    def _move_generated_plots(self, bag_name: str) -> bool:
         """
         Move generated IMU Allan Variance plots to the save directory inside the Docker container.
 
@@ -160,7 +162,9 @@ class IMUCalibration(CalibrationBase):
 
         # Inside Docker
         save_dir = os.path.join(
-            self.docker_calibration_dir, self.config.calibrators.imu_calibrator.save_dir
+            self.docker_calibration_dir,
+            self.config.calibrators.imu_calibrator.save_dir,
+            bag_name,
         )
 
         cmd = [
@@ -205,7 +209,6 @@ class IMUCalibration(CalibrationBase):
         Returns:
             bool: True if calibration was successful, False otherwise.
         """
-        self._create_temp_container()
 
         if len(rosbag.imu_topics) > 1:
             logger.warning(
@@ -222,9 +225,16 @@ class IMUCalibration(CalibrationBase):
             "sequence_time": int(rosbag.duration * 1e-9),
         }
 
+        bag_name = rosbag.name.split(".")[0]
+
         save_dir = os.path.join(
-            self.config.calibration_dir, self.config.calibrators.imu_calibrator.save_dir
+            self.config.calibration_dir,
+            self.config.calibrators.imu_calibrator.save_dir,
+            bag_name,
         )
+
+        os.makedirs(os.path.join(save_dir), exist_ok=True)
+
         imu_config_file = os.path.join(save_dir, "imu_config.yaml")
 
         with open(imu_config_file, "w+") as file:
@@ -233,26 +243,21 @@ class IMUCalibration(CalibrationBase):
         # Run calibration steps
         if not all(
             [
-                self._compute_allan_variance(),
-                self._analyze_allan_variance(),
-                self._move_generated_plots(),
+                self._compute_allan_variance(bag_name),
+                self._analyze_allan_variance(bag_name),
+                self._move_generated_plots(bag_name),
             ]
         ):
-            self._cleanup_temp_container()
             return False
-
-        self._cleanup_temp_container()
 
         # Update IMU parameters
         imu_out_file = os.path.join(
-            self.config.calibration_dir,
-            self.config.calibrators.imu_calibrator.save_dir,
+            save_dir,
             IMU_NOISE_RAW,
         )
 
         imu_new_file = os.path.join(
-            self.config.calibration_dir,
-            self.config.calibrators.imu_calibrator.save_dir,
+            save_dir,
             IMU_NOISE_FILENAME,
         )
         self._update_imu_parameters(imu_out_file, imu_new_file)
@@ -278,6 +283,8 @@ class IMUCalibration(CalibrationBase):
             self.config.rosbags_dir, CalibrationMode.IMU_ONLY
         )
 
+        self._create_temp_container()
+
         for bag in bags:
             print(bag)
             shutil.move(
@@ -288,11 +295,14 @@ class IMUCalibration(CalibrationBase):
             if not self.run_single_calibration(bag):
                 continue
 
+            bag_name = bag.name.split(".")[0]
+
             # Move Allan variance data
             shutil.move(
                 f"{self.rosbags_dir}/temp/allan_variance.csv",
                 os.path.join(
                     self.save_dir,
+                    bag_name,
                     "allan_variance.csv",
                 ),
             )
@@ -301,6 +311,8 @@ class IMUCalibration(CalibrationBase):
                 os.path.join(self.rosbags_dir, "temp", bag.name),
                 os.path.join(self.rosbags_dir),
             )
+
+        self._cleanup_temp_container()
 
         # Cleanup temp directory
         for file in os.listdir(os.path.join(self.rosbags_dir, "temp")):
