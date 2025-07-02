@@ -72,6 +72,18 @@ class TopicSelector:
     """Handles topic selection logic for different calibration types."""
 
     @staticmethod
+    def topic_in_bag(bag_info: RosbagInfo, name: str) -> bool:
+        for topic in bag_info.camera_topics:
+            if topic.name == name:
+                return True
+
+        for topic in bag_info.imu_topics:
+            if topic.name == name:
+                return True
+
+        return False
+
+    @staticmethod
     def select_camera_topics(
         bag_info: RosbagInfo, topic_patterns: Optional[List[str]] = None
     ) -> List[str]:

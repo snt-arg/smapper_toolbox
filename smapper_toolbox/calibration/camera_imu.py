@@ -6,7 +6,9 @@ This module provides the IMUCameraCalibration class and related utilities to per
 
 import os
 from glob import glob
-from typing import Optional
+from typing import List, Optional
+
+import yaml
 
 from smapper_toolbox.calibration.helpers import move_kalibr_results
 from smapper_toolbox.logger import logger
@@ -33,7 +35,7 @@ class IMUCameraCalibration(CalibrationBase):
     """
 
     def generate_docker_job_config(
-        self, bag_name: str, camchain_path: str, imu_config_path: str
+        self, bag_name: str, camchain_path: str, imu_config_paths: List[str]
     ) -> DockerJobConfig:
         """Generate Docker job configuration for camera-IMU calibration.
 
@@ -53,10 +55,15 @@ class IMUCameraCalibration(CalibrationBase):
             self.docker_calibration_dir,
             os.path.relpath(camchain_path, self.config.workspace.calibration_dir),
         )
-        imu_config_relative = os.path.join(
-            self.docker_calibration_dir,
-            os.path.relpath(imu_config_path, self.config.workspace.calibration_dir),
-        )
+
+        imu_config_relative_paths = []
+        for path in imu_config_paths:
+            imu_config_relative_paths.append(
+                os.path.join(
+                    self.docker_calibration_dir,
+                    os.path.relpath(path, self.config.workspace.calibration_dir),
+                )
+            )
 
         target_path = (
             self.config.get_target_path(self.config.calibration.camera_imu.target)
@@ -74,12 +81,17 @@ class IMUCameraCalibration(CalibrationBase):
             "rosrun", "kalibr", "kalibr_calibrate_imu_camera",
             "--bag", f"/bags/{bag_name}",
             "--cams", camchain_relative,
-            "--imu", imu_config_relative,
-            "--imu-models", "calibrated",
             "--target", target,
-            "--reprojection-sigma", "1.0", 
-            "--dont-show-report" 
+            "--reprojection-sigma", str(self.config.calibration.camera_imu.reprojection_sigma),
+            "--dont-show-report"
         ]
+
+        cmd.append("--imu")
+        cmd.extend(imu_config_relative_paths)
+
+        # NOTE: Assuming all imu models are calibrated.
+        cmd.append("--imu-models")
+        cmd.extend(["calibrated" for _ in imu_config_paths])
         # fmt: on
 
         job_config = DockerJobConfig(
@@ -137,10 +149,9 @@ class IMUCameraCalibration(CalibrationBase):
             self.config.calibration.camera.save_dir,
         )
 
-        imu_yaml = os.path.join(
+        imu_save_dir = os.path.join(
             self.config.workspace.calibration_dir,
             self.config.calibration.imu.save_dir,
-            IMU_NOISE_FILENAME,
         )
 
         bags = self.bag_analyzer.find_calibration_bags(
@@ -158,14 +169,40 @@ class IMUCameraCalibration(CalibrationBase):
 
             # BUG: We must go throug the imu.save_dir and get the yamls due to
             # the change made to IMUCalibrator
-            if not os.path.exists(imu_yaml):
+
+            imu_configs = []
+            for imu_yaml in os.listdir(imu_save_dir):
+                config_file = os.path.join(
+                    imu_save_dir,
+                    imu_yaml,
+                    IMU_NOISE_FILENAME,
+                )
+
+                if not os.path.exists(config_file):
+                    logger.error(
+                        "No IMU calibration file found. Please run IMU calibration first."
+                    )
+                    continue
+
+                with open(config_file, "r") as f:
+                    data = yaml.safe_load(f)
+                    target_topic = data["rostopic"]
+                    if not self.topics_selector.topic_in_bag(bag, target_topic):
+                        logger.info(
+                            f"Rosbag {bag.name} does not contain IMU topic {target_topic}. Not considering {imu_yaml} config."
+                        )
+                        continue
+
+                imu_configs.append(config_file)
+
+            if len(imu_configs) == 0:
                 logger.error(
-                    "No IMU calibration file found. Please run IMU calibration first."
+                    f"Could not find any valid imu noise for this bag: {bag.name}. Aborting."
                 )
                 return
 
             jobs.append(
-                self.generate_docker_job_config(bag.name, camera_yaml, imu_yaml)
+                self.generate_docker_job_config(bag.name, camera_yaml, imu_configs)
             )
 
         execute_docker_pool(
