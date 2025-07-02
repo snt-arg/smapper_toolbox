@@ -167,9 +167,6 @@ class IMUCameraCalibration(CalibrationBase):
                 )
                 return
 
-            # BUG: We must go throug the imu.save_dir and get the yamls due to
-            # the change made to IMUCalibrator
-
             imu_configs = []
             for imu_yaml in os.listdir(imu_save_dir):
                 config_file = os.path.join(
