@@ -93,7 +93,7 @@ class Calibrators:
         """Run IMU calibration."""
         self.imu_calibrator.run()
 
-    def calibrate_imu_camera(self) -> None:
+    def calibrate_cam_imu(self) -> None:
         """Run camera-IMU calibration."""
         self.imu_camera_calibrator.run()
 
