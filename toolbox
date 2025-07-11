@@ -1,24 +1,30 @@
 #!.venv/bin/python
 import typer
 
-from smapper_toolbox.cli import kalibr_app
+from smapper_toolbox.cli import kalibr_app, transforms_app
+from smapper_toolbox.config import ConfigManager
 from smapper_toolbox.logger import logger
 
+app = typer.Typer()
+app.add_typer(kalibr_app, name="kalibr")
+app.add_typer(transforms_app, name="transforms")
 
-def main():
+
+@app.callback()
+def main(ctx: typer.Context):
     """
     A toolbox to help automate the calibration process using dockerised kalibr.
 
     This tool helps calibrate cameras and IMUs using the Kalibr toolbox in a Docker container.
     It supports camera calibration, IMU calibration, and camera-IMU calibration.
     """
-    logger.info("Hello from calib-toolbox!")
+    config_manager = ConfigManager()
+    config = config_manager.config
 
-    app = typer.Typer()
-    app.add_typer(kalibr_app, name="kalibr")
-    app()
+    ctx.obj = {"config": config}
 
 
 if __name__ == "__main__":
     # typer.run(main)
-    main()
+    logger.info("Hello from calib-toolbox!")
+    app()

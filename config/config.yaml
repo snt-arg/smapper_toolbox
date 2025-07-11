@@ -1,7 +1,7 @@
 # Global settings
 workspace:
-    base_dir: ~/Work/smapper
-    calibration_dir: ~/Work/smapper/calibration/kalibr
+    base_dir: ~/work/smapper
+    calibration_dir: ~/work/smapper/calibration/kalibr
     rosbags_dir: ~/rosbags
 
 # Docker configuration
@@ -37,7 +37,6 @@ calibration:
             max_reprojection_error: 2.0
 
     imu:
-        enabled: true
         save_dir: static/imu
         random_walk_multiplier: 10
         white_noise_multiplier: 5
