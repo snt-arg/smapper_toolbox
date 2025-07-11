@@ -1,20 +1,26 @@
-from typing import Annotated
+from typing import Annotated, Optional
 
 import typer
 
 from smapper_toolbox.calibration.kalibr import Calibrators
-from smapper_toolbox.config import ConfigManager
 from smapper_toolbox.logger import logger
 from smapper_toolbox.rosbags import RosbagsConverter
 
 app = typer.Typer()
-config_manager = ConfigManager()
-config = config_manager.config
-calibrators = Calibrators(config)
 
 
-@app.callback()
-def setup():
+# Helper to conditionally override config
+def _set_if_not_none(attr, value):
+    if value is not None:
+        return value
+    return attr
+
+
+def setup(ctx: typer.Context):
+    config = ctx.obj["config"]
+
+    print(config.workspace.rosbags_dir)
+
     rosbags_converter = RosbagsConverter(
         config.workspace.rosbags_dir,
         parallel_jobs=config.performance.parallel_conversions,
@@ -22,220 +28,271 @@ def setup():
 
     if not rosbags_converter.convert():
         logger.error("Something went wrong when converting rosbags")
-        exit(1)
+        raise typer.Exit(1)
 
+    calibrators = Calibrators(config)
     calibrators.setup()
+
+    ctx.obj["calibrators"] = calibrators
 
 
 @app.command()
 def cams(
+    ctx: typer.Context,
     workspace: Annotated[
-        str, typer.Option(help="Location to smapper repository.")
-    ] = config.workspace.base_dir,
+        Optional[str], typer.Option(help="Location to smapper repository.")
+    ] = None,
     calib_dir: Annotated[
-        str,
+        Optional[str],
         typer.Option(
             help="Path where calibration files are and where it will be saved."
         ),
-    ] = config.workspace.calibration_dir,
+    ] = None,
     rosbags_dir: Annotated[
-        str, typer.Option(help="Path where ros2 bags are located")
-    ] = config.workspace.rosbags_dir,
+        Optional[str], typer.Option(help="Path where ros2 bags are located")
+    ] = None,
     camera_model: Annotated[
-        str, typer.Option(help="Camera model (pinhole-radtan/pinhole-equi)")
-    ] = config.calibration.camera.camera_model,
+        Optional[str], typer.Option(help="Camera model (pinhole-radtan/pinhole-equi)")
+    ] = None,
     save_dir: Annotated[
-        str, typer.Option(help="Save directory (relative to calibration_dir)")
-    ] = config.calibration.camera.save_dir,
+        Optional[str], typer.Option(help="Save directory (relative to calibration_dir)")
+    ] = None,
     parallel: Annotated[
-        int, typer.Option(help="Number of parallel calibrations")
-    ] = config.performance.parallel_calibrations,
+        Optional[int], typer.Option(help="Number of parallel calibrations")
+    ] = None,
     target: Annotated[
-        str, typer.Option(help="Calibration target (apriltag/checkerboard)")
-    ] = config.calibration.camera.target,
-    imu: Annotated[
-        bool, typer.Option(help="Also run the IMU noise calibration")
-    ] = False,
-    cam_imu: Annotated[
-        bool,
-        typer.Option(
-            help="Also run the camera imu calibration (if --imu is set, this will only run after.)"
-        ),
-    ] = False,
+        Optional[str], typer.Option(help="Calibration target (apriltag/checkerboard)")
+    ] = None,
 ):
     """Calibrate cameras."""
+    config = ctx.obj["config"]
 
-    config.workspace.base_dir = workspace
+    config.workspace.base_dir = _set_if_not_none(config.workspace.base_dir, workspace)
+    config.workspace.calibration_dir = _set_if_not_none(
+        config.workspace.calibration_dir, calib_dir
+    )
+    config.workspace.rosbags_dir = _set_if_not_none(
+        config.workspace.rosbags_dir, rosbags_dir
+    )
+    config.performance.parallel_calibrations = _set_if_not_none(
+        config.performance.parallel_calibrations, parallel
+    )
 
-    config.workspace.calibration_dir = calib_dir
-    config.workspace.rosbags_dir = rosbags_dir
-    config.performance.parallel_calibrations = parallel
-    config.calibration.camera.camera_model = camera_model
-    config.calibration.camera.save_dir = save_dir
-    config.calibration.camera.target = target
+    config.calibration.camera.camera_model = _set_if_not_none(
+        config.calibration.camera.camera_model, camera_model
+    )
+    config.calibration.camera.save_dir = _set_if_not_none(
+        config.calibration.camera.save_dir, save_dir
+    )
+    config.calibration.camera.target = _set_if_not_none(
+        config.calibration.camera.target, target
+    )
 
+    setup(ctx)
+    calibrators = ctx.obj["calibrators"]
     calibrators.calibrate_cameras()
-
-    if imu:
-        calibrators.calibrate_imu()
-
-    if cam_imu:
-        calibrators.calibrate_cam_imu()
 
 
 @app.command()
 def imu(
+    ctx: typer.Context,
     workspace: Annotated[
-        str, typer.Option(help="Location to smapper repository.")
-    ] = config.workspace.base_dir,
+        Optional[str], typer.Option(help="Location to smapper repository.")
+    ] = None,
     calib_dir: Annotated[
-        str,
+        Optional[str],
         typer.Option(
             help="Path where calibration files are and where it will be saved."
         ),
-    ] = config.workspace.calibration_dir,
+    ] = None,
     rosbags_dir: Annotated[
-        str, typer.Option(help="Path where ros2 bags are located")
-    ] = config.workspace.rosbags_dir,
+        Optional[str], typer.Option(help="Path where ros2 bags are located")
+    ] = None,
     random_walk_multiplier: Annotated[
-        int, typer.Option(help="Random Walk multiplier value to be applied to results")
-    ] = config.calibration.imu.random_walk_multiplier,
+        Optional[int], typer.Option(help="Random Walk multiplier")
+    ] = None,
     white_noise_multiplier: Annotated[
-        int, typer.Option(help="White Noise multiplier value to be applied to results")
-    ] = config.calibration.imu.white_noise_multiplier,
-    save_dir: Annotated[
-        str, typer.Option(help="Save directory (relative to calibration_dir)")
-    ] = config.calibration.camera.save_dir,
+        Optional[int], typer.Option(help="White Noise multiplier")
+    ] = None,
+    save_dir: Annotated[Optional[str], typer.Option(help="IMU save directory")] = None,
     min_duration_hours: Annotated[
-        float, typer.Option(help="Calibration target (apriltag/checkerboard)")
-    ] = config.calibration.imu.validation.min_duration_hours,
+        Optional[float], typer.Option(help="Minimum duration in hours")
+    ] = None,
 ):
     """Obtain IMU noise model(s)."""
+    config = ctx.obj["config"]
 
-    config.workspace.base_dir = workspace
+    config.workspace.base_dir = _set_if_not_none(config.workspace.base_dir, workspace)
+    config.workspace.calibration_dir = _set_if_not_none(
+        config.workspace.calibration_dir, calib_dir
+    )
+    config.workspace.rosbags_dir = _set_if_not_none(
+        config.workspace.rosbags_dir, rosbags_dir
+    )
 
-    config.workspace.calibration_dir = calib_dir
-    config.workspace.rosbags_dir = rosbags_dir
-    config.calibration.imu.random_walk_multiplier = random_walk_multiplier
-    config.calibration.imu.white_noise_multiplier = white_noise_multiplier
-    config.calibration.imu.save_dir = save_dir
-    config.calibration.imu.validation.min_duration_hours = min_duration_hours
+    config.calibration.imu.random_walk_multiplier = _set_if_not_none(
+        config.calibration.imu.random_walk_multiplier, random_walk_multiplier
+    )
+    config.calibration.imu.white_noise_multiplier = _set_if_not_none(
+        config.calibration.imu.white_noise_multiplier, white_noise_multiplier
+    )
+    config.calibration.imu.save_dir = _set_if_not_none(
+        config.calibration.imu.save_dir, save_dir
+    )
+    config.calibration.imu.validation.min_duration_hours = _set_if_not_none(
+        config.calibration.imu.validation.min_duration_hours, min_duration_hours
+    )
 
-    calibrators.calibrate_cameras()
+    setup(ctx)
+    calibrators = ctx.obj["calibrators"]
     calibrators.calibrate_imu()
 
 
 @app.command()
 def cam_imu(
+    ctx: typer.Context,
     workspace: Annotated[
-        str, typer.Option(help="Location to smapper repository.")
-    ] = config.workspace.base_dir,
+        Optional[str], typer.Option(help="Location to smapper repository.")
+    ] = None,
     calib_dir: Annotated[
-        str,
+        Optional[str],
         typer.Option(
             help="Path where calibration files are and where it will be saved."
         ),
-    ] = config.workspace.calibration_dir,
+    ] = None,
     rosbags_dir: Annotated[
-        str, typer.Option(help="Path where ros2 bags are located")
-    ] = config.workspace.rosbags_dir,
-    save_dir: Annotated[
-        str, typer.Option(help="Save directory (relative to calibration_dir)")
-    ] = config.calibration.camera.save_dir,
+        Optional[str], typer.Option(help="Path where ros2 bags are located")
+    ] = None,
+    save_dir: Annotated[Optional[str], typer.Option(help="Save directory")] = None,
     reprojection_sigma: Annotated[
-        float, typer.Option(help="Estimated reprojection sigma to be used.")
-    ] = config.calibration.camera_imu.reprojection_sigma,
-    target: Annotated[
-        str, typer.Option(help="Calibration target (apriltag/checkerboard)")
-    ] = config.calibration.camera_imu.target,
+        Optional[float], typer.Option(help="Estimated reprojection sigma")
+    ] = None,
+    target: Annotated[Optional[str], typer.Option(help="Calibration target")] = None,
 ):
     """Calibrate camera to IMU."""
+    config = ctx.obj["config"]
 
-    config.workspace.base_dir = workspace
+    config.workspace.base_dir = _set_if_not_none(config.workspace.base_dir, workspace)
+    config.workspace.calibration_dir = _set_if_not_none(
+        config.workspace.calibration_dir, calib_dir
+    )
+    config.workspace.rosbags_dir = _set_if_not_none(
+        config.workspace.rosbags_dir, rosbags_dir
+    )
 
-    config.workspace.calibration_dir = calib_dir
-    config.workspace.rosbags_dir = rosbags_dir
-    config.calibration.camera_imu.reprojection_sigma = reprojection_sigma
-    config.calibration.camera_imu.save_dir = save_dir
-    config.calibration.camera_imu.target = target
+    config.calibration.camera_imu.save_dir = _set_if_not_none(
+        config.calibration.camera_imu.save_dir, save_dir
+    )
+    config.calibration.camera_imu.reprojection_sigma = _set_if_not_none(
+        config.calibration.camera_imu.reprojection_sigma, reprojection_sigma
+    )
+    config.calibration.camera_imu.target = _set_if_not_none(
+        config.calibration.camera_imu.target, target
+    )
+
+    setup(ctx)
+
+    calibrators = ctx.obj["calibrators"]
     calibrators.calibrate_cam_imu()
 
 
 @app.command()
 def all(
+    ctx: typer.Context,
     workspace: Annotated[
-        str, typer.Option(help="Location to smapper repository.")
-    ] = config.workspace.base_dir,
+        Optional[str], typer.Option(help="Location to smapper repository.")
+    ] = None,
     calib_dir: Annotated[
-        str,
+        Optional[str],
         typer.Option(
             help="Path where calibration files are and where it will be saved."
         ),
-    ] = config.workspace.calibration_dir,
+    ] = None,
     rosbags_dir: Annotated[
-        str, typer.Option(help="Path where ros2 bags are located")
-    ] = config.workspace.rosbags_dir,
-    camera_model: Annotated[
-        str, typer.Option(help="Camera model (pinhole-radtan/pinhole-equi)")
-    ] = config.calibration.camera.camera_model,
+        Optional[str], typer.Option(help="Path where ros2 bags are located")
+    ] = None,
+    camera_model: Annotated[Optional[str], typer.Option(help="Camera model")] = None,
     camera_save_dir: Annotated[
-        str, typer.Option(help="Camera save directory (relative to calibration_dir)")
-    ] = config.calibration.camera.save_dir,
+        Optional[str], typer.Option(help="Camera save dir")
+    ] = None,
     parallel: Annotated[
-        int, typer.Option(help="Number of parallel calibrations")
-    ] = config.performance.parallel_calibrations,
+        Optional[int], typer.Option(help="Parallel calibrations")
+    ] = None,
     target: Annotated[
-        str, typer.Option(help="Calibration target (apriltag/checkerboard)")
-    ] = config.calibration.camera.target,
+        Optional[str], typer.Option(help="Camera calibration target")
+    ] = None,
     random_walk_multiplier: Annotated[
-        int, typer.Option(help="IMU random walk multiplier")
-    ] = config.calibration.imu.random_walk_multiplier,
+        Optional[int], typer.Option(help="IMU random walk multiplier")
+    ] = None,
     white_noise_multiplier: Annotated[
-        int, typer.Option(help="IMU white noise multiplier")
-    ] = config.calibration.imu.white_noise_multiplier,
-    imu_save_dir: Annotated[
-        str, typer.Option(help="IMU save directory (relative to calibration_dir)")
-    ] = config.calibration.imu.save_dir,
+        Optional[int], typer.Option(help="IMU white noise multiplier")
+    ] = None,
+    imu_save_dir: Annotated[Optional[str], typer.Option(help="IMU save dir")] = None,
     min_duration_hours: Annotated[
-        float, typer.Option(help="Minimum duration in hours for IMU validation")
-    ] = config.calibration.imu.validation.min_duration_hours,
+        Optional[float], typer.Option(help="IMU min duration")
+    ] = None,
     reprojection_sigma: Annotated[
-        float, typer.Option(help="Estimated reprojection sigma")
-    ] = config.calibration.camera_imu.reprojection_sigma,
+        Optional[float], typer.Option(help="Reprojection sigma")
+    ] = None,
     cam_imu_target: Annotated[
-        str, typer.Option(help="Camera-IMU calibration target")
-    ] = config.calibration.camera_imu.target,
+        Optional[str], typer.Option(help="Camera-IMU target")
+    ] = None,
     cam_imu_save_dir: Annotated[
-        str,
-        typer.Option(help="Camera-IMU save directory (relative to calibration_dir)"),
-    ] = config.calibration.camera_imu.save_dir,
+        Optional[str], typer.Option(help="Camera-IMU save dir")
+    ] = None,
 ):
-    """Run all calibrations. It starts with camera, then IMU and finally camera to IMU."""
+    """Run all calibrations (camera, IMU, camera-IMU)."""
+    config = ctx.obj["config"]
 
-    # Workspace
-    config.workspace.base_dir = workspace
-    config.workspace.calibration_dir = calib_dir
-    config.workspace.rosbags_dir = rosbags_dir
-    config.performance.parallel_calibrations = parallel
+    config.workspace.base_dir = _set_if_not_none(config.workspace.base_dir, workspace)
+    config.workspace.calibration_dir = _set_if_not_none(
+        config.workspace.calibration_dir, calib_dir
+    )
+    config.workspace.rosbags_dir = _set_if_not_none(
+        config.workspace.rosbags_dir, rosbags_dir
+    )
+    config.performance.parallel_calibrations = _set_if_not_none(
+        config.performance.parallel_calibrations, parallel
+    )
 
-    # Camera calibration
-    config.calibration.camera.camera_model = camera_model
-    config.calibration.camera.save_dir = camera_save_dir
-    config.calibration.camera.target = target
+    config.calibration.camera.camera_model = _set_if_not_none(
+        config.calibration.camera.camera_model, camera_model
+    )
+    config.calibration.camera.save_dir = _set_if_not_none(
+        config.calibration.camera.save_dir, camera_save_dir
+    )
+    config.calibration.camera.target = _set_if_not_none(
+        config.calibration.camera.target, target
+    )
 
-    # IMU calibration
-    config.calibration.imu.random_walk_multiplier = random_walk_multiplier
-    config.calibration.imu.white_noise_multiplier = white_noise_multiplier
-    config.calibration.imu.save_dir = imu_save_dir
-    config.calibration.imu.validation.min_duration_hours = min_duration_hours
+    config.calibration.imu.random_walk_multiplier = _set_if_not_none(
+        config.calibration.imu.random_walk_multiplier, random_walk_multiplier
+    )
+    config.calibration.imu.white_noise_multiplier = _set_if_not_none(
+        config.calibration.imu.white_noise_multiplier, white_noise_multiplier
+    )
+    config.calibration.imu.save_dir = _set_if_not_none(
+        config.calibration.imu.save_dir, imu_save_dir
+    )
+    config.calibration.imu.validation.min_duration_hours = _set_if_not_none(
+        config.calibration.imu.validation.min_duration_hours, min_duration_hours
+    )
 
-    # Camera-IMU calibration
-    config.calibration.camera_imu.reprojection_sigma = reprojection_sigma
-    config.calibration.camera_imu.target = cam_imu_target
-    config.calibration.camera_imu.save_dir = cam_imu_save_dir
+    config.calibration.camera_imu.reprojection_sigma = _set_if_not_none(
+        config.calibration.camera_imu.reprojection_sigma, reprojection_sigma
+    )
+    config.calibration.camera_imu.target = _set_if_not_none(
+        config.calibration.camera_imu.target, cam_imu_target
+    )
+    config.calibration.camera_imu.save_dir = _set_if_not_none(
+        config.calibration.camera_imu.save_dir, cam_imu_save_dir
+    )
 
     logger.info("Running all calibrations with overridden configuration")
 
+    setup(ctx)
+
+    calibrators = ctx.obj["calibrators"]
     calibrators.calibrate_cameras()
     calibrators.calibrate_imu()
     calibrators.calibrate_cam_imu()

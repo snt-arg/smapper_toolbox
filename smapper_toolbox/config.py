@@ -312,7 +312,7 @@ class ConfigManager:
         # Map CLI args to config paths
         cli_mappings = {
             "workspace": "workspace.base_dir",
-            "calibration_dir": "workspace.calibration_dir",
+            "calib_dir": "workspace.calibration_dir",
             "rosbags_dir": "workspace.rosbags_dir",
             "parallel": "performance.parallel_calibrations",
             "target": "calibration.camera.target",
