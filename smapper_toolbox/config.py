@@ -161,7 +161,11 @@ class Config(BaseModel):
         # Set docker dockerfile path if not specified
         if self.docker.dockerfile_path is None:
             self.docker.dockerfile_path = str(
-                Path(self.workspace.base_dir) / "docker" / "kalibr" / "Dockerfile"
+                Path(self.workspace.base_dir)
+                / "infra"
+                / "docker"
+                / "kalibr"
+                / "Dockerfile"
             )
 
         return self
