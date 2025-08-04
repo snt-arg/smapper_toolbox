@@ -1,12 +1,16 @@
 # Global settings
 workspace:
-    base_dir: ~/work/smapper
-    calibration_dir: ~/work/smapper/calibration/kalibr
-    rosbags_dir: ~/rosbags
+    # Path to smapper repository
+    base_dir: ~/Work/smapper/
+    # Path where targets are and where to save results
+    calibration_dir: ~/Work/smapper/calibration/kalibr
+    # Root directory where rosbags are. Should contain a ros2 folder with the bags
+    rosbags_dir: /run/media/pedros/smapper_ssd/calibrations/
 
 # Docker configuration
 docker:
     image_tag: kalibr
+    # dockerfile_path: path_to_dockerfile
 
 # Target configurations (can have multiple)
 targets:
@@ -14,40 +18,42 @@ targets:
         type: apriltag
         filename: april_6x6_80x80cm.yaml
 
-    checkerboard:
-        type: checkerboard
-        filename: checkerboard_9x6_0.05m.yaml
-        # path: custom_path
-
 # Performance settings
 performance:
+    # Number of parallel ros2 bags to ros1 bags conversions
     parallel_conversions: 4
+    # Number of parallel calibration happen at the same time when running Kalibr
     parallel_calibrations: 4
-    memory_per_job: 2g
 
 # Calibration modes
 calibration:
     camera:
-        save_dir: static/camera
+        # Where to save results. [Relative to calibration_dir]
+        save_dir: dynamic/intrinsics
         target: default # Reference to targets section
         camera_model: pinhole-radtan
+        # The following settings do NOT change.
         output_formats: [yaml, pdf, txt]
         validation:
             min_images: 50
             max_reprojection_error: 2.0
 
     imu:
+        # Where to save results. [Relative to calibration_dir]
         save_dir: static/imu
         random_walk_multiplier: 10
         white_noise_multiplier: 5
+        # The following settings do NOT change.
         validation:
             min_duration_hours: 3
             max_bias_drift: 0.01
 
     camera_imu:
-        save_dir: dynamic
+        # Where to save results. [Relative to calibration_dir]
+        save_dir: dynamic/extrinsincs
         target: default
         reprojection_sigma: 1.0
+        # The following settings do NOT change.
         output_formats: [yaml, pdf, txt]
         validation:
             min_images: 100
