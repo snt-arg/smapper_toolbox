@@ -10,14 +10,10 @@ app = typer.Typer()
 
 @app.command()
 def generate(
-    ctx: typer.Context,
     input: Annotated[str, typer.Option(help="Summary config file genereated.")],
     output: Annotated[str, typer.Option(help="Output file")],
 ):
     logger.info("Generating TFs")
-    config = ctx.obj["config"]
-
-    print(config)
 
     generator = TFTreeGenerator()
     config_data = generator.load_config_from_yaml(input)

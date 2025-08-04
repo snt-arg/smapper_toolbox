@@ -1,13 +1,14 @@
 #!.venv/bin/python
 import typer
 
-from smapper_toolbox.cli import kalibr_app, transforms_app
+from smapper_toolbox.cli import cam_info_app, kalibr_app, transforms_app
 from smapper_toolbox.config import ConfigManager
 from smapper_toolbox.logger import logger
 
 app = typer.Typer()
 app.add_typer(kalibr_app, name="kalibr")
 app.add_typer(transforms_app, name="transforms")
+app.add_typer(cam_info_app, name="cam_info")
 
 
 @app.callback()
